@@ -4,7 +4,7 @@ const { protect, adminOnly } = require("../middleware/auth");
 
 router.get("/", async (req, res) => {
   try {
-    const products = await Product.find({ active: true }).sort({ createdAt: -1 });
+    const products = await Product.find({ isAvailable: true }).sort({ createdAt: -1 });
     res.json(products);
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -36,7 +36,7 @@ router.put("/:id", protect, adminOnly, async (req, res) => {
 });
 
 router.delete("/:id", protect, adminOnly, async (req, res) => {
-  const product = await Product.findByIdAndUpdate(req.params.id, { active: false }, { new: true });
+  const product = await Product.findByIdAndUpdate(req.params.id, { isAvailable: false }, { new: true });
   if (!product) return res.status(404).json({ message: "Product not found" });
   res.json({ message: "Product removed" });
 });
