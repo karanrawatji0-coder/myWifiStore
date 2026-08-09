@@ -13,7 +13,7 @@ router.post("/", protect, async (req, res) => {
 
     for (const item of items) {
       const product = await Product.findById(item.product);
-      if (!product || !product.active) {
+      if (!product || !product.isAvailable) {
         return res.status(400).json({ message: "A product is unavailable" });
       }
       if (product.stock < item.quantity) {
@@ -64,7 +64,7 @@ router.patch("/:id/status", protect, adminOnly, async (req, res) => {
 
   const order = await Order.findByIdAndUpdate(
     req.params.id,
-    { orderStatus: req.body.status },
+    { status: req.body.status },
     { new: true }
   ).populate("user", "name email phone");
 
