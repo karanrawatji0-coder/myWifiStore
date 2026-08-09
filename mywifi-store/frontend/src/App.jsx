@@ -217,7 +217,7 @@ function Orders() {
         <div className="order" key={o._id}>
           <div><b>Order #{o._id.slice(-8).toUpperCase()}</b><span>{new Date(o.createdAt).toLocaleString("en-IN")}</span></div>
           <p>{o.items.map(i => `${i.name} × ${i.quantity}`).join(", ")}</p>
-          <div><b>₹{o.totalAmount.toLocaleString("en-IN")}</b><span className="status">{o.orderStatus}</span></div>
+          <div><b>₹{o.totalAmount.toLocaleString("en-IN")}</b><span className="status">{o.status}</span></div>
           <small>{o.shippingAddress.city}, {o.shippingAddress.state} - {o.shippingAddress.pincode}</small>
         </div>
       ))
@@ -267,7 +267,7 @@ function Admin() {
 
     {tab === "orders" ? <div>
       {orders.map(o => <div className="order admin-order" key={o._id}>
-        <div><b>#{o._id.slice(-8).toUpperCase()}</b><span>{o.user?.name} • {o.user?.phone}</span><span className="status">{o.orderStatus}</span></div>
+        <div><b>#{o._id.slice(-8).toUpperCase()}</b><span>{o.user?.name} • {o.user?.phone}</span><span className="status">{o.status}</span></div>
         <p>{o.items.map(i => `${i.name} × ${i.quantity}`).join(", ")} — ₹{o.totalAmount.toLocaleString("en-IN")}</p>
         <p><b>Ship to:</b> {o.shippingAddress.fullName}, {o.shippingAddress.addressLine}, {o.shippingAddress.city}, {o.shippingAddress.state} - {o.shippingAddress.pincode}</p>
         <div className="status-buttons">
