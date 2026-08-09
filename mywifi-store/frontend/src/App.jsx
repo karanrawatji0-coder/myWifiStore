@@ -218,6 +218,7 @@ function Orders() {
           <div><b>Order #{o._id.slice(-8).toUpperCase()}</b><span>{new Date(o.createdAt).toLocaleString("en-IN")}</span></div>
           <p>{o.items.map(i => `${i.name} × ${i.quantity}`).join(", ")}</p>
           <div><b>₹{o.totalAmount.toLocaleString("en-IN")}</b><span className="status">{o.status}</span></div>
+          {o.deliveryDate && <p><b>Expected delivery:</b> {new Date(o.deliveryDate).toLocaleDateString("en-IN")}</p>}
           <small>{o.shippingAddress.city}, {o.shippingAddress.state} - {o.shippingAddress.pincode}</small>
         </div>
       ))
@@ -231,6 +232,7 @@ function Admin() {
   const [tab, setTab] = useState("orders");
   const [form, setForm] = useState({ name:"", description:"", category:"WiFi Router", price:"", stock:"", image:"https://placehold.co/600x400?text=WiFi+Product" });
   const [message, setMessage] = useState("");
+  const [dateInputs, setDateInputs] = useState({});
 
   async function load() {
     const [o, p] = await Promise.all([api("/orders/all"), api("/products/all")]);
@@ -241,6 +243,16 @@ function Admin() {
   async function status(id, value) {
     try { await api(`/orders/${id}/status`, { method:"PATCH", body:JSON.stringify({status:value}) }); load(); }
     catch(e) { setMessage(e.message); }
+  }
+
+  async function saveDeliveryDate(id) {
+    const value = dateInputs[id];
+    if (!value) return;
+    try {
+      await api(`/orders/${id}/status`, { method:"PATCH", body:JSON.stringify({ deliveryDate: value }) });
+      setMessage("Delivery date updated");
+      load();
+    } catch(e) { setMessage(e.message); }
   }
 
   async function addProduct(e) {
@@ -270,10 +282,19 @@ function Admin() {
         <div><b>#{o._id.slice(-8).toUpperCase()}</b><span>{o.user?.name} • {o.user?.phone}</span><span className="status">{o.status}</span></div>
         <p>{o.items.map(i => `${i.name} × ${i.quantity}`).join(", ")} — ₹{o.totalAmount.toLocaleString("en-IN")}</p>
         <p><b>Ship to:</b> {o.shippingAddress.fullName}, {o.shippingAddress.addressLine}, {o.shippingAddress.city}, {o.shippingAddress.state} - {o.shippingAddress.pincode}</p>
+        {o.deliveryDate && <p><b>Expected delivery:</b> {new Date(o.deliveryDate).toLocaleDateString("en-IN")}</p>}
         <div className="status-buttons">
           {["Accepted","Processing","Shipped","Out for Delivery","Delivered","Rejected"].map(s =>
             <button key={s} className="small-btn" onClick={()=>status(o._id,s)}>{s}</button>
           )}
+        </div>
+        <div className="status-buttons" style={{marginTop:"8px"}}>
+          <input
+            type="date"
+            value={dateInputs[o._id] ?? (o.deliveryDate ? o.deliveryDate.slice(0,10) : "")}
+            onChange={e => setDateInputs({...dateInputs, [o._id]: e.target.value})}
+          />
+          <button className="small-btn" onClick={()=>saveDeliveryDate(o._id)}>Set Delivery Date</button>
         </div>
       </div>)}
     </div> :

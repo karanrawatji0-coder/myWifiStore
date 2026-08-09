@@ -60,11 +60,20 @@ router.get("/all", protect, adminOnly, async (req, res) => {
 
 router.patch("/:id/status", protect, adminOnly, async (req, res) => {
   const allowed = ["Pending", "Accepted", "Processing", "Shipped", "Out for Delivery", "Delivered", "Rejected", "Cancelled"];
-  if (!allowed.includes(req.body.status)) return res.status(400).json({ message: "Invalid status" });
+  const { status, deliveryDate } = req.body;
+
+  const update = {};
+  if (status !== undefined) {
+    if (!allowed.includes(status)) return res.status(400).json({ message: "Invalid status" });
+    update.status = status;
+  }
+  if (deliveryDate !== undefined) {
+    update.deliveryDate = deliveryDate;
+  }
 
   const order = await Order.findByIdAndUpdate(
     req.params.id,
-    { status: req.body.status },
+    update,
     { new: true }
   ).populate("user", "name email phone");
 
