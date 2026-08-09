@@ -1,119 +1,51 @@
-const express = require("express");
-const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
-
 const User = require("../models/User");
 
-const router = express.Router();
+const protect = async (req, res, next) => {
+  try {
+    const authHeader = req.headers.authorization;
 
-// REGISTER
-router.post("/register", async (req, res) => {
-try {
-const { name, email, password } = req.body;
-
-    if (!name || !email || !password) {
-        return res.status(400).json({
-            message: "All fields are required"
-        });
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res.status(401).json({
+        message: "Not authorized"
+      });
     }
 
-    const existingUser = await User.findOne({ email });
+    const token = authHeader.split(" ")[1];
 
-    if (existingUser) {
-        return res.status(400).json({
-            message: "User already exists"
-        });
-    }
+    const decoded = jwt.verify(
+      token,
+      process.env.JWT_SECRET || "mywifi_secret"
+    );
 
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    const user = await User.create({
-        name,
-        email,
-        password: hashedPassword,
-        role: "user"
-    });
-
-    res.status(201).json({
-        message: "User created successfully",
-        user: {
-            id: user._id,
-            name: user.name,
-            email: user.email,
-            role: user.role
-        }
-    });
-
-} catch (error) {
-    console.error(error);
-
-    res.status(500).json({
-        message: "Server error"
-    });
-}
-
-
-});
-
-// LOGIN
-router.post("/login", async (req, res) => {
-try {
-const { email, password } = req.body;
-
-
-    const user = await User.findOne({ email });
+    const user = await User.findById(decoded.id).select("-password");
 
     if (!user) {
-        return res.status(401).json({
-            message: "Invalid email or password"
-        });
+      return res.status(401).json({
+        message: "User not found"
+      });
     }
 
-    const passwordMatch = await bcrypt.compare(
-        password,
-        user.password
-    );
-
-    if (!passwordMatch) {
-        return res.status(401).json({
-            message: "Invalid email or password"
-        });
-    }
-
-    const token = jwt.sign(
-        {
-            id: user._id,
-            email: user.email,
-            role: user.role
-        },
-        process.env.JWT_SECRET || "mywifi_secret",
-        {
-            expiresIn: "7d"
-        }
-    );
-
-    res.json({
-        message: "Login successful",
-
-        token,
-
-        user: {
-            id: user._id,
-            name: user.name,
-            email: user.email,
-            role: user.role
-        }
+    req.user = user;
+    next();
+  } catch (error) {
+    return res.status(401).json({
+      message: "Invalid token"
     });
+  }
+};
 
-} catch (error) {
-    console.error(error);
+const adminOnly = (req, res, next) => {
+  if (req.user && req.user.role === "admin") {
+    return next();
+  }
 
-    res.status(500).json({
-        message: "Server error"
-    });
-}
+  return res.status(403).json({
+    message: "Admin access required"
+  });
+};
 
-
-});
-
-module.exports = router;
+module.exports = {
+  protect,
+  adminOnly
+};
