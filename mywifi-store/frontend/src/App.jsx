@@ -10,6 +10,7 @@ function Navbar({ user, cartCount, logout }) {
         <NavLink to="/">Home</NavLink>
         <NavLink to="/products">Products</NavLink>
         {user && <NavLink to="/orders">My Orders</NavLink>}
+        <NavLink to="/contact">Contact Us</NavLink>
         {user?.role === "admin" && <NavLink to="/admin">Admin</NavLink>}
         <NavLink to="/cart">Cart ({cartCount})</NavLink>
         {user ? (
@@ -138,6 +139,39 @@ function AuthForm({ title, submit, form, setForm, error, button, register }) {
   );
 }
 
+function Contact() {
+  const [form, setForm] = useState({ name: "", email: "", phone: "", message: "" });
+  const [status, setStatus] = useState("");
+  const [error, setError] = useState("");
+
+  async function submit(e) {
+    e.preventDefault();
+    setError("");
+    try {
+      await api("/inquiries", { method: "POST", body: JSON.stringify(form) });
+      setStatus("Thanks! Your message has been received. We'll get back to you soon.");
+      setForm({ name: "", email: "", phone: "", message: "" });
+    } catch (e) { setError(e.message); }
+  }
+
+  return (
+    <main className="container narrow">
+      <h2>Contact Us</h2>
+      <p>Have a question about a product or an order? Send us a message.</p>
+      {status ? <div className="notice">{status}</div> :
+        <form className="form-card" onSubmit={submit}>
+          <input required placeholder="Full name" value={form.name} onChange={e => setForm({...form, name:e.target.value})} />
+          <input required type="email" placeholder="Email" value={form.email} onChange={e => setForm({...form, email:e.target.value})} />
+          <input placeholder="Mobile number (optional)" value={form.phone} onChange={e => setForm({...form, phone:e.target.value})} />
+          <textarea required rows="5" placeholder="How can we help?" value={form.message} onChange={e => setForm({...form, message:e.target.value})} />
+          {error && <div className="error">{error}</div>}
+          <button className="btn full">Send Message</button>
+        </form>
+      }
+    </main>
+  );
+}
+
 function Cart({ cart, changeQty, removeItem }) {
   const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
   return (
@@ -229,14 +263,15 @@ function Orders() {
 function Admin() {
   const [orders, setOrders] = useState([]);
   const [products, setProducts] = useState([]);
+  const [inquiries, setInquiries] = useState([]);
   const [tab, setTab] = useState("orders");
   const [form, setForm] = useState({ name:"", description:"", category:"WiFi Router", price:"", stock:"", image:"https://placehold.co/600x400?text=WiFi+Product" });
   const [message, setMessage] = useState("");
   const [dateInputs, setDateInputs] = useState({});
 
   async function load() {
-    const [o, p] = await Promise.all([api("/orders/all"), api("/products/all")]);
-    setOrders(o); setProducts(p);
+    const [o, p, i] = await Promise.all([api("/orders/all"), api("/products/all"), api("/inquiries/all")]);
+    setOrders(o); setProducts(p); setInquiries(i);
   }
   useEffect(() => { load().catch(e => setMessage(e.message)); }, []);
 
@@ -271,9 +306,20 @@ function Admin() {
     load();
   }
 
+  async function resolveInquiry(id) {
+    try {
+      await api(`/inquiries/${id}/status`, { method:"PATCH", body:JSON.stringify({status:"Resolved"}) });
+      load();
+    } catch(e) { setMessage(e.message); }
+  }
+
   return <main className="container">
-    <div className="admin-head"><div><h2>Admin Dashboard</h2><p>Manage orders and products.</p></div>
-      <div><button className="tab" onClick={()=>setTab("orders")}>Orders ({orders.length})</button><button className="tab" onClick={()=>setTab("products")}>Products ({products.length})</button></div>
+    <div className="admin-head"><div><h2>Admin Dashboard</h2><p>Manage orders, products and inquiries.</p></div>
+      <div>
+        <button className="tab" onClick={()=>setTab("orders")}>Orders ({orders.length})</button>
+        <button className="tab" onClick={()=>setTab("products")}>Products ({products.length})</button>
+        <button className="tab" onClick={()=>setTab("inquiries")}>Inquiries ({inquiries.filter(i=>i.status==="New").length} new)</button>
+      </div>
     </div>
     {message && <div className="notice">{message}</div>}
 
@@ -297,7 +343,7 @@ function Admin() {
           <button className="small-btn" onClick={()=>saveDeliveryDate(o._id)}>Set Delivery Date</button>
         </div>
       </div>)}
-    </div> :
+    </div> : tab === "products" ?
     <div className="admin-grid">
       <form className="form-card" onSubmit={addProduct}>
         <h3>Add Product</h3>
@@ -305,6 +351,18 @@ function Admin() {
         <button className="btn full">Add Product</button>
       </form>
       <div>{products.map(p => <div className="mini-product" key={p._id}><img src={p.image} alt="" /><div><b>{p.name}</b><p>₹{p.price} • Stock: {p.stock}</p></div><button className="danger-text" onClick={()=>removeProduct(p._id)}>Remove</button></div>)}</div>
+    </div> :
+    <div>
+      {!inquiries.length ? <div className="empty">No inquiries yet.</div> :
+        inquiries.map(i => <div className="order admin-order" key={i._id}>
+          <div><b>{i.name}</b><span>{i.email} • {i.phone || "No phone"}</span><span className="status">{i.status}</span></div>
+          <p>{i.message}</p>
+          <small>{new Date(i.createdAt).toLocaleString("en-IN")}</small>
+          {i.status === "New" && <div className="status-buttons" style={{marginTop:"8px"}}>
+            <button className="small-btn" onClick={()=>resolveInquiry(i._id)}>Mark Resolved</button>
+          </div>}
+        </div>)
+      }
     </div>}
   </main>;
 }
@@ -341,6 +399,7 @@ export default function App() {
       <Route path="/products" element={<Products addToCart={addToCart} />} />
       <Route path="/login" element={<Login setUser={setUser} />} />
       <Route path="/register" element={<Register setUser={setUser} />} />
+      <Route path="/contact" element={<Contact />} />
       <Route path="/cart" element={<Cart cart={cart} changeQty={changeQty} removeItem={removeItem} />} />
       <Route path="/checkout" element={user ? <Checkout cart={cart} clearCart={clearCart} /> : <Login setUser={setUser} />} />
       <Route path="/orders" element={user ? <Orders /> : <Login setUser={setUser} />} />
