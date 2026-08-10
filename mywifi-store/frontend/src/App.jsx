@@ -141,33 +141,50 @@ function AuthForm({ title, submit, form, setForm, error, button, register }) {
 
 function Contact() {
   const [form, setForm] = useState({ name: "", email: "", phone: "", message: "" });
-  const [status, setStatus] = useState("");
+  const [reply, setReply] = useState(null);
+  const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
 
   async function submit(e) {
     e.preventDefault();
     setError("");
+    setSending(true);
     try {
-      await api("/inquiries", { method: "POST", body: JSON.stringify(form) });
-      setStatus("Thanks! Your message has been received. We'll get back to you soon.");
+      const inquiry = await api("/inquiries", { method: "POST", body: JSON.stringify(form) });
+      setReply(inquiry);
       setForm({ name: "", email: "", phone: "", message: "" });
     } catch (e) { setError(e.message); }
+    setSending(false);
   }
 
   return (
     <main className="container narrow">
       <h2>Contact Us</h2>
       <p>Have a question about a product or an order? Send us a message.</p>
-      {status ? <div className="notice">{status}</div> :
+      {reply ? (
+        <div className="form-card">
+          <div className="notice">Thanks! Your message has been received.</div>
+          {reply.aiReply ? (
+            <>
+              <p><b>Here's a quick answer:</b></p>
+              <p>{reply.aiReply}</p>
+              <small>Our support team may also follow up if needed.</small>
+            </>
+          ) : (
+            <p>Our support team will get back to you soon.</p>
+          )}
+          <button className="btn full" onClick={() => setReply(null)}>Send another message</button>
+        </div>
+      ) : (
         <form className="form-card" onSubmit={submit}>
           <input required placeholder="Full name" value={form.name} onChange={e => setForm({...form, name:e.target.value})} />
           <input required type="email" placeholder="Email" value={form.email} onChange={e => setForm({...form, email:e.target.value})} />
           <input placeholder="Mobile number (optional)" value={form.phone} onChange={e => setForm({...form, phone:e.target.value})} />
           <textarea required rows="5" placeholder="How can we help?" value={form.message} onChange={e => setForm({...form, message:e.target.value})} />
           {error && <div className="error">{error}</div>}
-          <button className="btn full">Send Message</button>
+          <button className="btn full" disabled={sending}>{sending ? "Sending..." : "Send Message"}</button>
         </form>
-      }
+      )}
     </main>
   );
 }
@@ -356,7 +373,8 @@ function Admin() {
       {!inquiries.length ? <div className="empty">No inquiries yet.</div> :
         inquiries.map(i => <div className="order admin-order" key={i._id}>
           <div><b>{i.name}</b><span>{i.email} • {i.phone || "No phone"}</span><span className="status">{i.status}</span></div>
-          <p>{i.message}</p>
+          <p><b>Customer:</b> {i.message}</p>
+          {i.aiReply && <p><b>AI reply sent:</b> {i.aiReply}</p>}
           <small>{new Date(i.createdAt).toLocaleString("en-IN")}</small>
           {i.status === "New" && <div className="status-buttons" style={{marginTop:"8px"}}>
             <button className="small-btn" onClick={()=>resolveInquiry(i._id)}>Mark Resolved</button>
