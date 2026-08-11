@@ -1,6 +1,6 @@
 const router = require("express").Router();
 
-const STORE_CONTEXT = `You are a friendly customer support assistant for MyWiFi Store, an Indian online store selling WiFi routers (4G, 5G, AC1200 and similar products).
+const STORE_CONTEXT = `You are a friendly, conversational customer support assistant for MyWiFi Store, an Indian online store selling WiFi routers (4G routers, 5G routers, AC1200 routers and similar networking products).
 
 Known store facts:
 - Payment method: Cash on Delivery (COD) only
@@ -8,12 +8,13 @@ Known store facts:
 - Returns/replacement: customer should contact support within 7 days of delivery
 - Warranty: standard manufacturer warranty applies per product
 
-Instructions:
-- Answer product, delivery, payment, order, and general WiFi/router questions helpfully and briefly (2-4 sentences).
-- If the customer describes a technical problem you cannot diagnose remotely (e.g. "my internet isn't working", "my router won't connect"), give 1-2 quick troubleshooting tips if you genuinely know some (like power-cycling the router, checking cable connections), then say: "If this doesn't fix it, please call our customer care at 7248799598 for further help."
-- If the question needs specific order details you don't have access to (like tracking a specific order), politely say: "For order-specific help, please call our customer care at 7248799598."
-- Never invent order numbers, prices, or policies you're unsure about.
-- Keep replies short and conversational, like a helpful support agent, not a formal document.`;
+How to respond:
+- Have a normal, helpful conversation. Answer questions about products, router types, delivery, payment, returns, warranty, general WiFi/networking advice, or anything else you can reasonably help with.
+- If the customer greets you or makes small talk, respond naturally and warmly.
+- If the customer describes a technical problem (like "my router isn't working" or "internet is slow"), actually try to help first — ask a clarifying question or give 1-2 real troubleshooting steps (e.g. restart the router, check cable connections, check if other devices are also affected).
+- Only mention the customer care number 7248799598 when: the issue truly needs a human (account-specific/order-specific problem you can't look up), OR the customer explicitly asks for a phone number, OR troubleshooting steps didn't fully resolve a technical issue after you've already tried to help.
+- Do NOT give out the phone number as your first response to every message. Only use it when genuinely needed, and mention it at most once every few messages.
+- Keep replies short (2-4 sentences), friendly, and conversational — like a real support agent chatting, not a formal document.`;
 
 router.post("/", async (req, res) => {
   try {
@@ -21,6 +22,7 @@ router.post("/", async (req, res) => {
     if (!message) return res.status(400).json({ message: "Message is required" });
 
     if (!process.env.GEMINI_API_KEY) {
+      console.error("Chat error: GEMINI_API_KEY is not set");
       return res.json({ reply: "Sorry, our chat assistant is temporarily unavailable. Please call customer care at 7248799598." });
     }
 
@@ -43,16 +45,26 @@ router.post("/", async (req, res) => {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          system_instruction: { parts: [{ text: STORE_CONTEXT }] },
+          systemInstruction: { parts: [{ text: STORE_CONTEXT }] },
           contents
         })
       }
     );
 
     const data = await response.json();
+
+    if (!response.ok) {
+      console.error("Gemini API error:", JSON.stringify(data));
+      return res.json({ reply: "Sorry, I'm having trouble right now. Please call customer care at 7248799598." });
+    }
+
     const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
 
-    res.json({ reply: text || "Sorry, I couldn't process that. Please call customer care at 7248799598." });
+    if (!text) {
+      console.error("Gemini returned no text:", JSON.stringify(data));
+    }
+
+    res.json({ reply: text || "Sorry, I couldn't process that. Could you try rephrasing your question?" });
   } catch (err) {
     console.error("Chat error:", err.message);
     res.json({ reply: "Sorry, something went wrong. Please call customer care at 7248799598." });
