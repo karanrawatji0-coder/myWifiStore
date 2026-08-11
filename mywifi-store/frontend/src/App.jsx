@@ -385,6 +385,66 @@ function Admin() {
   </main>;
 }
 
+function ChatWidget() {
+  const [open, setOpen] = useState(false);
+  const [messages, setMessages] = useState([
+    { role: "assistant", text: "Hi! I'm MyWiFi Store's assistant. Ask me anything about our products, orders, or delivery." }
+  ]);
+  const [input, setInput] = useState("");
+  const [sending, setSending] = useState(false);
+
+  async function send(e) {
+    e.preventDefault();
+    const text = input.trim();
+    if (!text || sending) return;
+
+    const newMessages = [...messages, { role: "user", text }];
+    setMessages(newMessages);
+    setInput("");
+    setSending(true);
+
+    try {
+      const res = await fetch((import.meta.env.VITE_API_URL || "http://localhost:5000/api") + "/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: text,
+          history: newMessages.map(m => ({ role: m.role, text: m.text }))
+        })
+      });
+      const data = await res.json();
+      setMessages(prev => [...prev, { role: "assistant", text: data.reply || "Sorry, please call customer care at 7248799598." }]);
+    } catch (err) {
+      setMessages(prev => [...prev, { role: "assistant", text: "Sorry, something went wrong. Please call customer care at 7248799598." }]);
+    }
+    setSending(false);
+  }
+
+  return (
+    <div className="chat-widget">
+      {open && (
+        <div className="chat-panel">
+          <div className="chat-header">
+            <b>MyWiFi Support</b>
+            <button className="link-btn" onClick={() => setOpen(false)}>✕</button>
+          </div>
+          <div className="chat-messages">
+            {messages.map((m, i) => (
+              <div key={i} className={m.role === "user" ? "chat-msg user" : "chat-msg bot"}>{m.text}</div>
+            ))}
+            {sending && <div className="chat-msg bot">Typing...</div>}
+          </div>
+          <form className="chat-input" onSubmit={send}>
+            <input placeholder="Type your question..." value={input} onChange={e => setInput(e.target.value)} disabled={sending} />
+            <button className="btn" disabled={sending}>Send</button>
+          </form>
+        </div>
+      )}
+      <button className="chat-toggle" onClick={() => setOpen(o => !o)}>{open ? "✕" : "💬 Chat"}</button>
+    </div>
+  );
+}
+
 export default function App() {
   const [user, setUser] = useState(() => JSON.parse(localStorage.getItem("user") || "null"));
   const [cart, setCart] = useState(() => JSON.parse(localStorage.getItem("cart") || "[]"));
@@ -424,5 +484,6 @@ export default function App() {
       <Route path="/admin" element={user?.role === "admin" ? <Admin /> : <Login setUser={setUser} />} />
     </Routes>
     <footer>© 2026 MyWiFi Store • India-wide WiFi products</footer>
+    <ChatWidget />
   </>;
 }
