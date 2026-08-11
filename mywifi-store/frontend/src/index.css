@@ -118,3 +118,8 @@
   cursor: pointer;
   font-weight: 600;
 }
+
+/* Location & map styles */
+.locate-btn{background:#0f172a;margin-bottom:12px}
+.map-hint{display:block;color:#8a93a3;margin-bottom:16px}
+.delivery-map{width:100%;height:260px;border-radius:14px;overflow:hidden;border:1px solid #e5e7eb;margin-bottom:6px}

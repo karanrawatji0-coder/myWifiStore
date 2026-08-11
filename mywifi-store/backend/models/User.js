@@ -15,7 +15,10 @@ const userSchema = new mongoose.Schema({
   phone: { type: String, required: true, trim: true },
   password: { type: String, required: true },
   role: { type: String, enum: ["customer", "admin"], default: "customer" },
-  addresses: [addressSchema]
+  addresses: [addressSchema],
+  isVerified: { type: Boolean, default: false },
+  otp: { type: String, default: null },
+  otpExpires: { type: Date, default: null }
 }, { timestamps: true });
 
 module.exports = mongoose.model("User", userSchema);

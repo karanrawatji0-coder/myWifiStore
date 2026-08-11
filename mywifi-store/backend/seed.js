@@ -19,7 +19,8 @@ async function seed() {
       email: adminEmail,
       phone: "9999999999",
       password,
-      role: "admin"
+      role: "admin",
+      isVerified: true
     });
     console.log(`Admin created: ${adminEmail} / ${adminPassword}`);
   } else {

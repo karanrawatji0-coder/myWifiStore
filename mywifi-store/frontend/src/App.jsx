@@ -1,6 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, NavLink, Route, Routes, useNavigate } from "react-router-dom";
 import { api } from "./api";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
 
 function Navbar({ user, cartCount, logout }) {
   return (
@@ -89,16 +91,28 @@ function Login({ setUser }) {
   const navigate = useNavigate();
   const [form, setForm] = useState({ email: "", password: "" });
   const [error, setError] = useState("");
+  const [needsVerification, setNeedsVerification] = useState(null);
 
   async function submit(e) {
     e.preventDefault();
+    setError("");
     try {
       const data = await api("/auth/login", { method: "POST", body: JSON.stringify(form) });
       localStorage.setItem("token", data.token);
       localStorage.setItem("user", JSON.stringify(data.user));
       setUser(data.user);
       navigate(data.user.role === "admin" ? "/admin" : "/products");
-    } catch (e) { setError(e.message); }
+    } catch (e) {
+      if (e.message && e.message.toLowerCase().includes("verify")) {
+        setNeedsVerification(form.email);
+      } else {
+        setError(e.message);
+      }
+    }
+  }
+
+  if (needsVerification) {
+    return <VerifyOTP email={needsVerification} setUser={setUser} onVerified={() => navigate("/products")} autoSend />;
   }
 
   return <AuthForm title="Login" submit={submit} form={form} setForm={setForm} error={error} button="Login" />;
@@ -108,19 +122,72 @@ function Register({ setUser }) {
   const navigate = useNavigate();
   const [form, setForm] = useState({ name: "", email: "", phone: "", password: "" });
   const [error, setError] = useState("");
+  const [pendingEmail, setPendingEmail] = useState("");
 
   async function submit(e) {
     e.preventDefault();
+    setError("");
     try {
       const data = await api("/auth/register", { method: "POST", body: JSON.stringify(form) });
-      localStorage.setItem("token", data.token);
-      localStorage.setItem("user", JSON.stringify(data.user));
-      setUser(data.user);
-      navigate("/products");
+      setPendingEmail(data.email);
     } catch (e) { setError(e.message); }
   }
 
+  if (pendingEmail) {
+    return <VerifyOTP email={pendingEmail} setUser={setUser} onVerified={() => navigate("/products")} />;
+  }
+
   return <AuthForm title="Create Account" submit={submit} form={form} setForm={setForm} error={error} button="Register" register />;
+}
+
+function VerifyOTP({ email, setUser, onVerified, autoSend }) {
+  const [otp, setOtp] = useState("");
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState(autoSend ? "Sending a verification code to your email..." : `We've sent a 6-digit code to ${email}. Enter it below to verify your account.`);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!autoSend) return;
+    api("/auth/resend-otp", { method: "POST", body: JSON.stringify({ email }) })
+      .then(data => setNotice(data.message))
+      .catch(e => setError(e.message));
+  }, []);
+
+  async function submit(e) {
+    e.preventDefault();
+    setError("");
+    setBusy(true);
+    try {
+      const data = await api("/auth/verify-otp", { method: "POST", body: JSON.stringify({ email, otp }) });
+      localStorage.setItem("token", data.token);
+      localStorage.setItem("user", JSON.stringify(data.user));
+      setUser(data.user);
+      onVerified();
+    } catch (e) { setError(e.message); }
+    setBusy(false);
+  }
+
+  async function resend() {
+    setError("");
+    setNotice("");
+    try {
+      const data = await api("/auth/resend-otp", { method: "POST", body: JSON.stringify({ email }) });
+      setNotice(data.message);
+    } catch (e) { setError(e.message); }
+  }
+
+  return (
+    <main className="auth">
+      <form className="form-card" onSubmit={submit}>
+        <h2>Verify Your Email</h2>
+        {notice && <div className="notice">{notice}</div>}
+        <input required maxLength={6} placeholder="6-digit code" value={otp} onChange={e => setOtp(e.target.value.replace(/\D/g, ""))} />
+        {error && <div className="error">{error}</div>}
+        <button className="btn full" disabled={busy}>{busy ? "Verifying..." : "Verify & Continue"}</button>
+        <button type="button" className="link-btn" onClick={resend}>Resend code</button>
+      </form>
+    </main>
+  );
 }
 
 function AuthForm({ title, submit, form, setForm, error, button, register }) {
@@ -217,10 +284,101 @@ function Cart({ cart, changeQty, removeItem }) {
   );
 }
 
+function DeliveryMap({ position, setPosition, onAddressResolved }) {
+  const mapRef = useRef(null);
+  const mapInstance = useRef(null);
+  const markerRef = useRef(null);
+
+  useEffect(() => {
+    if (mapInstance.current) return;
+    const center = position || [22.9734, 78.6569];
+    const map = L.map(mapRef.current).setView(center, position ? 15 : 5);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: "© OpenStreetMap contributors"
+    }).addTo(map);
+
+    const marker = L.marker(center, { draggable: true }).addTo(map);
+    marker.on("dragend", async () => {
+      const { lat, lng } = marker.getLatLng();
+      setPosition([lat, lng]);
+      const address = await reverseGeocode(lat, lng);
+      if (address) onAddressResolved(address, lat, lng);
+    });
+
+    map.on("click", async (e) => {
+      marker.setLatLng(e.latlng);
+      setPosition([e.latlng.lat, e.latlng.lng]);
+      const address = await reverseGeocode(e.latlng.lat, e.latlng.lng);
+      if (address) onAddressResolved(address, e.latlng.lat, e.latlng.lng);
+    });
+
+    mapInstance.current = map;
+    markerRef.current = marker;
+  }, []);
+
+  useEffect(() => {
+    if (mapInstance.current && markerRef.current && position) {
+      markerRef.current.setLatLng(position);
+      mapInstance.current.setView(position, 15);
+    }
+  }, [position]);
+
+  return <div ref={mapRef} className="delivery-map" />;
+}
+
+async function reverseGeocode(lat, lng) {
+  try {
+    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&addressdetails=1`);
+    const data = await res.json();
+    const a = data.address || {};
+    return {
+      addressLine: [a.house_number, a.road, a.suburb].filter(Boolean).join(", ") || data.display_name || "",
+      city: a.city || a.town || a.village || a.county || "",
+      state: a.state || "",
+      pincode: a.postcode || ""
+    };
+  } catch (err) {
+    return null;
+  }
+}
+
 function Checkout({ cart, clearCart }) {
   const navigate = useNavigate();
   const [form, setForm] = useState({ fullName:"", phone:"", addressLine:"", city:"", state:"", pincode:"" });
+  const [position, setPosition] = useState(null);
+  const [locating, setLocating] = useState(false);
+  const [locError, setLocError] = useState("");
   const [error, setError] = useState("");
+
+  function useCurrentLocation() {
+    setLocError("");
+    if (!navigator.geolocation) {
+      setLocError("Location is not supported on this browser.");
+      return;
+    }
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const { latitude, longitude } = pos.coords;
+        setPosition([latitude, longitude]);
+        const address = await reverseGeocode(latitude, longitude);
+        if (address) {
+          setForm(f => ({ ...f, addressLine: address.addressLine, city: address.city, state: address.state, pincode: address.pincode }));
+        } else {
+          setLocError("Found your location, but couldn't fetch the address. Please fill it in manually.");
+        }
+        setLocating(false);
+      },
+      () => {
+        setLocError("Couldn't access your location. Please allow location access or enter your address manually.");
+        setLocating(false);
+      }
+    );
+  }
+
+  function onMapAddressResolved(address, lat, lng) {
+    setForm(f => ({ ...f, addressLine: address.addressLine, city: address.city, state: address.state, pincode: address.pincode }));
+  }
 
   async function placeOrder(e) {
     e.preventDefault();
@@ -229,7 +387,7 @@ function Checkout({ cart, clearCart }) {
         method: "POST",
         body: JSON.stringify({
           items: cart.map(i => ({ product: i._id, quantity: i.quantity })),
-          shippingAddress: form
+          shippingAddress: position ? { ...form, lat: position[0], lng: position[1] } : form
         })
       });
       clearCart();
@@ -244,6 +402,15 @@ function Checkout({ cart, clearCart }) {
     <main className="container narrow">
       <h2>Checkout</h2>
       <p>Cash on Delivery • Delivery available across India</p>
+
+      <button type="button" className="btn full locate-btn" onClick={useCurrentLocation} disabled={locating}>
+        📍 {locating ? "Finding your location..." : "Use my current location"}
+      </button>
+      {locError && <div className="error">{locError}</div>}
+
+      <DeliveryMap position={position} setPosition={setPosition} onAddressResolved={onMapAddressResolved} />
+      <small className="map-hint">Tap or drag the pin on the map to fine-tune your delivery location.</small>
+
       <form className="form-card" onSubmit={placeOrder}>
         {Object.entries(form).map(([key, value]) => (
           <input key={key} required placeholder={key === "addressLine" ? "House / Street Address" : key[0].toUpperCase()+key.slice(1)}

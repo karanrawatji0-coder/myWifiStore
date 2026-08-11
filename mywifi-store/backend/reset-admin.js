@@ -14,12 +14,12 @@ async function resetAdmin() {
 
   const admin = await User.findOneAndUpdate(
     { email: adminEmail.toLowerCase() },
-    { password: hashed, role: "admin" },
+    { password: hashed, role: "admin", isVerified: true },
     { new: true }
   );
 
   if (admin) {
-    console.log(`Password reset for: ${adminEmail}`);
+    console.log(`Password reset for: ${adminEmail} (isVerified set to true)`);
   } else {
     console.log(`No user found with email ${adminEmail}. Creating new admin...`);
     await User.create({
@@ -27,7 +27,8 @@ async function resetAdmin() {
       email: adminEmail.toLowerCase(),
       phone: "9999999999",
       password: hashed,
-      role: "admin"
+      role: "admin",
+      isVerified: true
     });
     console.log(`Admin created: ${adminEmail}`);
   }
