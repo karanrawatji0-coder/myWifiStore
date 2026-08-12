@@ -424,8 +424,26 @@ function Checkout({ cart, clearCart }) {
   );
 }
 
+function OrderTracker({ history }) {
+  if (!history || !history.length) return null;
+  return (
+    <div className="tracker">
+      {history.map((h, i) => (
+        <div className="tracker-step" key={i}>
+          <div className="tracker-dot" />
+          <div>
+            <b>{h.status}</b>
+            <div className="tracker-time">{new Date(h.date).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}</div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function Orders() {
   const [orders, setOrders] = useState([]);
+  const [expanded, setExpanded] = useState({});
   useEffect(() => { api("/orders/my").then(setOrders).catch(console.error); }, []);
 
   return <main className="container">
@@ -436,8 +454,12 @@ function Orders() {
           <div><b>Order #{o._id.slice(-8).toUpperCase()}</b><span>{new Date(o.createdAt).toLocaleString("en-IN")}</span></div>
           <p>{o.items.map(i => `${i.name} × ${i.quantity}`).join(", ")}</p>
           <div><b>₹{o.totalAmount.toLocaleString("en-IN")}</b><span className="status">{o.status}</span></div>
-          {o.deliveryDate && <p><b>Expected delivery:</b> {new Date(o.deliveryDate).toLocaleDateString("en-IN")}</p>}
+          {o.deliveryDate && <p><b>Expected delivery:</b> {new Date(o.deliveryDate).toLocaleDateString("en-IN", { dateStyle: "medium" })}</p>}
           <small>{o.shippingAddress.city}, {o.shippingAddress.state} - {o.shippingAddress.pincode}</small>
+          <button type="button" className="link-btn track-toggle" onClick={() => setExpanded({...expanded, [o._id]: !expanded[o._id]})}>
+            {expanded[o._id] ? "Hide tracking" : "Track order"}
+          </button>
+          {expanded[o._id] && <OrderTracker history={o.statusHistory} />}
         </div>
       ))
     }
@@ -514,7 +536,7 @@ function Admin() {
         <p><b>Ship to:</b> {o.shippingAddress.fullName}, {o.shippingAddress.addressLine}, {o.shippingAddress.city}, {o.shippingAddress.state} - {o.shippingAddress.pincode}</p>
         {o.deliveryDate && <p><b>Expected delivery:</b> {new Date(o.deliveryDate).toLocaleDateString("en-IN")}</p>}
         <div className="status-buttons">
-          {["Accepted","Processing","Shipped","Out for Delivery","Delivered","Rejected"].map(s =>
+          {["Processing","Shipped","Out for Delivery","Delivered","Rejected"].map(s =>
             <button key={s} className="small-btn" onClick={()=>status(o._id,s)}>{s}</button>
           )}
         </div>
