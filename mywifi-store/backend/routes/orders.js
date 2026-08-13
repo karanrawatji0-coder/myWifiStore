@@ -34,12 +34,18 @@ router.post("/", protect, async (req, res) => {
       await Product.findByIdAndUpdate(item.product, { $inc: { stock: -item.quantity } });
     }
 
+    const now = new Date();
+    const estimatedDelivery = new Date(now.getTime() + 5 * 24 * 60 * 60 * 1000); // 5 days from now
+
     const order = await Order.create({
       user: req.user._id,
       items: orderItems,
       shippingAddress,
       totalAmount: total,
-      paymentMethod: "COD"
+      paymentMethod: "COD",
+      status: "Accepted",
+      deliveryDate: estimatedDelivery,
+      statusHistory: [{ status: "Accepted", date: now }]
     });
 
     res.status(201).json(order);
@@ -63,17 +69,23 @@ router.patch("/:id/status", protect, adminOnly, async (req, res) => {
   const { status, deliveryDate } = req.body;
 
   const update = {};
+  const push = {};
+
   if (status !== undefined) {
     if (!allowed.includes(status)) return res.status(400).json({ message: "Invalid status" });
     update.status = status;
+    push.statusHistory = { status, date: new Date() };
   }
   if (deliveryDate !== undefined) {
     update.deliveryDate = deliveryDate;
   }
 
+  const query = { $set: update };
+  if (push.statusHistory) query.$push = { statusHistory: push.statusHistory };
+
   const order = await Order.findByIdAndUpdate(
     req.params.id,
-    update,
+    query,
     { new: true }
   ).populate("user", "name email phone");
 

@@ -32,6 +32,14 @@ const orderItemSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const statusHistorySchema = new mongoose.Schema(
+  {
+    status: { type: String, required: true },
+    date: { type: Date, default: Date.now }
+  },
+  { _id: false }
+);
+
 const orderSchema = new mongoose.Schema(
   {
     user: {
@@ -72,12 +80,17 @@ const orderSchema = new mongoose.Schema(
         "Rejected",
         "Cancelled"
       ],
-      default: "Pending"
+      default: "Accepted"
     },
 
     deliveryDate: {
       type: Date,
       default: null
+    },
+
+    statusHistory: {
+      type: [statusHistorySchema],
+      default: []
     }
   },
   {
