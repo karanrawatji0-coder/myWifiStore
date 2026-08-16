@@ -441,24 +441,71 @@ function OrderTracker({ history }) {
   );
 }
 
+const CUSTOMER_CANCELLABLE = ["Accepted", "Processing", "Shipped", "Out for Delivery"];
+
 function Orders() {
   const [orders, setOrders] = useState([]);
   const [expanded, setExpanded] = useState({});
-  useEffect(() => { api("/orders/my").then(setOrders).catch(console.error); }, []);
+  const [replaceFormFor, setReplaceFormFor] = useState(null);
+  const [replaceReason, setReplaceReason] = useState("");
+  const [message, setMessage] = useState("");
+
+  function load() {
+    api("/orders/my").then(setOrders).catch(console.error);
+  }
+  useEffect(() => { load(); }, []);
+
+  async function cancelOrder(id) {
+    if (!confirm("Cancel this order?")) return;
+    try {
+      await api(`/orders/${id}/cancel`, { method: "PATCH" });
+      setMessage("Order cancelled.");
+      load();
+    } catch (e) { setMessage(e.message); }
+  }
+
+  async function submitReplacement(id) {
+    if (!replaceReason.trim()) { setMessage("Please describe the issue."); return; }
+    try {
+      await api(`/orders/${id}/request-replacement`, { method: "PATCH", body: JSON.stringify({ reason: replaceReason }) });
+      setMessage("Replacement requested. Our team will review it shortly.");
+      setReplaceFormFor(null);
+      setReplaceReason("");
+      load();
+    } catch (e) { setMessage(e.message); }
+  }
 
   return <main className="container">
     <h2>My Orders</h2>
+    {message && <div className="notice">{message}</div>}
     {!orders.length ? <div className="empty">No orders yet.</div> :
       orders.map(o => (
         <div className="order" key={o._id}>
           <div><b>Order #{o._id.slice(-8).toUpperCase()}</b><span>{new Date(o.createdAt).toLocaleString("en-IN")}</span></div>
           <p>{o.items.map(i => `${i.name} × ${i.quantity}`).join(", ")}</p>
           <div><b>₹{o.totalAmount.toLocaleString("en-IN")}</b><span className="status">{o.status}</span></div>
-          {o.deliveryDate && <p><b>Expected delivery:</b> {new Date(o.deliveryDate).toLocaleDateString("en-IN", { dateStyle: "medium" })}</p>}
+          {o.deliveryDate && o.status !== "Cancelled" && <p><b>Expected delivery:</b> {new Date(o.deliveryDate).toLocaleDateString("en-IN", { dateStyle: "medium" })}</p>}
+          {o.replacementRequested && <p><b>Replacement:</b> {o.replacementStatus} — {o.replacementReason}</p>}
           <small>{o.shippingAddress.city}, {o.shippingAddress.state} - {o.shippingAddress.pincode}</small>
-          <button type="button" className="link-btn track-toggle" onClick={() => setExpanded({...expanded, [o._id]: !expanded[o._id]})}>
-            {expanded[o._id] ? "Hide tracking" : "Track order"}
-          </button>
+          <div className="order-actions">
+            <button type="button" className="link-btn track-toggle" onClick={() => setExpanded({...expanded, [o._id]: !expanded[o._id]})}>
+              {expanded[o._id] ? "Hide tracking" : "Track order"}
+            </button>
+            {CUSTOMER_CANCELLABLE.includes(o.status) && (
+              <button type="button" className="danger-text" onClick={() => cancelOrder(o._id)}>Cancel Order</button>
+            )}
+            {o.status === "Delivered" && !o.replacementRequested && (
+              <button type="button" className="link-btn" onClick={() => setReplaceFormFor(replaceFormFor === o._id ? null : o._id)}>
+                {replaceFormFor === o._id ? "Close" : "Request Replacement"}
+              </button>
+            )}
+          </div>
+          {replaceFormFor === o._id && (
+            <div className="replace-form">
+              <textarea rows="3" placeholder="What's wrong with the product?" value={replaceReason} onChange={e => setReplaceReason(e.target.value)} />
+              <button type="button" className="btn" onClick={() => submitReplacement(o._id)}>Submit Request</button>
+            </div>
+          )}
           {expanded[o._id] && <OrderTracker history={o.statusHistory} />}
         </div>
       ))
@@ -483,6 +530,11 @@ function Admin() {
 
   async function status(id, value) {
     try { await api(`/orders/${id}/status`, { method:"PATCH", body:JSON.stringify({status:value}) }); load(); }
+    catch(e) { setMessage(e.message); }
+  }
+
+  async function replacementDecision(id, decision) {
+    try { await api(`/orders/${id}/replacement-status`, { method:"PATCH", body:JSON.stringify({replacementStatus:decision}) }); load(); }
     catch(e) { setMessage(e.message); }
   }
 
@@ -535,6 +587,9 @@ function Admin() {
         <p>{o.items.map(i => `${i.name} × ${i.quantity}`).join(", ")} — ₹{o.totalAmount.toLocaleString("en-IN")}</p>
         <p><b>Ship to:</b> {o.shippingAddress.fullName}, {o.shippingAddress.addressLine}, {o.shippingAddress.city}, {o.shippingAddress.state} - {o.shippingAddress.pincode}</p>
         {o.deliveryDate && <p><b>Expected delivery:</b> {new Date(o.deliveryDate).toLocaleDateString("en-IN")}</p>}
+        {o.replacementRequested && (
+          <p className="replacement-flag"><b>⚠ Replacement requested ({o.replacementStatus}):</b> {o.replacementReason}</p>
+        )}
         <div className="status-buttons">
           {["Processing","Shipped","Out for Delivery","Delivered","Rejected"].map(s =>
             <button key={s} className="small-btn" onClick={()=>status(o._id,s)}>{s}</button>
@@ -548,6 +603,12 @@ function Admin() {
           />
           <button className="small-btn" onClick={()=>saveDeliveryDate(o._id)}>Set Delivery Date</button>
         </div>
+        {o.replacementRequested && o.replacementStatus === "Requested" && (
+          <div className="status-buttons" style={{marginTop:"8px"}}>
+            <button className="small-btn" onClick={()=>replacementDecision(o._id,"Approved")}>Approve Replacement</button>
+            <button className="small-btn" onClick={()=>replacementDecision(o._id,"Rejected")}>Reject Replacement</button>
+          </div>
+        )}
       </div>)}
     </div> : tab === "products" ?
     <div className="admin-grid">

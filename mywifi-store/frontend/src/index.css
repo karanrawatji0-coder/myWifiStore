@@ -131,3 +131,15 @@
 .tracker-step:last-child{padding-bottom:0}
 .tracker-dot{position:absolute;left:-7px;top:2px;width:12px;height:12px;border-radius:50%;background:#2563eb;border:2px solid #fff;box-shadow:0 0 0 2px #2563eb}
 .tracker-time{color:#8a93a3;font-size:13px;margin-top:2px}
+
+/* Order actions row */
+.order-actions{display:flex;gap:16px;align-items:center;margin-top:10px}
+
+/* Order actions row */
+.order-actions{display:flex;gap:16px;align-items:center;margin-top:10px}
+.order-actions .track-toggle{margin-top:0}
+
+/* Replacement request styles */
+.replace-form{margin-top:12px;padding:12px;background:#f8fafc;border-radius:10px;border:1px solid #e2e8f0}
+.replace-form textarea{width:100%;box-sizing:border-box;margin-bottom:10px;padding:10px;border-radius:8px;border:1px solid #e2e8f0;font-family:inherit}
+.replacement-flag{color:#b45309;background:#fffbeb;padding:8px 12px;border-radius:8px;font-size:14px}

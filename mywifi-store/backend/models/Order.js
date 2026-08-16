@@ -91,6 +91,22 @@ const orderSchema = new mongoose.Schema(
     statusHistory: {
       type: [statusHistorySchema],
       default: []
+    },
+
+    replacementRequested: {
+      type: Boolean,
+      default: false
+    },
+
+    replacementReason: {
+      type: String,
+      default: ""
+    },
+
+    replacementStatus: {
+      type: String,
+      enum: ["", "Requested", "Approved", "Rejected"],
+      default: ""
     }
   },
   {
