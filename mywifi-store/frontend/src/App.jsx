@@ -84,23 +84,25 @@ function Categories() {
       {!Object.keys(categories).length ? <div className="empty">No products yet.</div> :
         <div className="category-grid">
           {Object.entries(categories).map(([cat, info]) => (
-            <button key={cat} className="category-card" onClick={() => navigate(`/products?category=${encodeURIComponent(cat)}`)}>
-              {info.image ? (
-                <div className="category-photo" style={{backgroundImage: `url(${info.image})`}}>
-                  <span className="category-photo-icon">{CATEGORY_ICONS[cat] || "📦"}</span>
-                </div>
-              ) : (
-                <div className="category-icon">{CATEGORY_ICONS[cat] || "📦"}</div>
-              )}
+            <div key={cat} className="category-card" onClick={() => navigate(`/products?category=${encodeURIComponent(cat)}`)}>
               <h3>{cat}</h3>
-              <p>{info.count} {info.count === 1 ? "product" : "products"}</p>
-            </button>
+              <div className="category-photo-wrap">
+                {info.image ? (
+                  <img src={info.image} alt={cat} className="category-photo-img" />
+                ) : (
+                  <div className="category-photo-fallback">{CATEGORY_ICONS[cat] || "📦"}</div>
+                )}
+              </div>
+              <span className="category-see-more">See more <span className="arrow">→</span></span>
+            </div>
           ))}
-          <button className="category-card" onClick={() => navigate("/products")}>
-            <div className="category-icon">🗂️</div>
+          <div className="category-card" onClick={() => navigate("/products")}>
             <h3>All Products</h3>
-            <p>{products.length} total</p>
-          </button>
+            <div className="category-photo-wrap">
+              <div className="category-photo-fallback">🗂️</div>
+            </div>
+            <span className="category-see-more">See more <span className="arrow">→</span></span>
+          </div>
         </div>
       }
     </main>
