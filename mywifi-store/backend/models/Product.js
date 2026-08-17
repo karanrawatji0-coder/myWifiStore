@@ -13,6 +13,12 @@ const productSchema = new mongoose.Schema(
       default: ""
     },
 
+    category: {
+      type: String,
+      default: "Other",
+      trim: true
+    },
+
     price: {
       type: Number,
       required: true,

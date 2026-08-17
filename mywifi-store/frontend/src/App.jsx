@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, NavLink, Route, Routes, useNavigate } from "react-router-dom";
+import { Link, NavLink, Route, Routes, useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "./api";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -10,7 +10,7 @@ function Navbar({ user, cartCount, logout }) {
       <Link className="brand" to="/">MyWiFi Store</Link>
       <nav>
         <NavLink to="/">Home</NavLink>
-        <NavLink to="/products">Products</NavLink>
+        <NavLink to="/categories">Products</NavLink>
         {user && <NavLink to="/orders">My Orders</NavLink>}
         <NavLink to="/contact">Contact Us</NavLink>
         {user?.role === "admin" && <NavLink to="/admin">Admin</NavLink>}
@@ -36,7 +36,7 @@ function Home() {
           <p className="eyebrow">FAST • RELIABLE • INDIA-WIDE</p>
           <h1>WiFi products delivered across India.</h1>
           <p>Shop routers and connectivity products with simple ordering and Cash on Delivery.</p>
-          <Link className="btn" to="/products">Shop WiFi Products</Link>
+          <Link className="btn" to="/categories">Shop WiFi Products</Link>
         </div>
       </section>
       <section className="features">
@@ -48,41 +48,109 @@ function Home() {
   );
 }
 
-function Products({ addToCart }) {
+const CATEGORY_ICONS = {
+  "WiFi Router": "📶",
+  "4G Router": "📡",
+  "5G Router": "🛰️",
+  "Security Camera": "📷",
+  "Broadband Connection": "🌐",
+  "Lease Line": "🔌",
+  "Accessories": "🧰",
+  "Other": "📦"
+};
+
+function Categories() {
   const [products, setProducts] = useState([]);
-  const [search, setSearch] = useState("");
   const [error, setError] = useState("");
+  const navigate = useNavigate();
 
   useEffect(() => {
     api("/products").then(setProducts).catch(e => setError(e.message));
   }, []);
 
-  const filtered = products.filter(p =>
-    `${p.name} ${p.category}`.toLowerCase().includes(search.toLowerCase())
-  );
+  const categories = {};
+  products.forEach(p => {
+    const cat = p.category || "Other";
+    if (!categories[cat]) categories[cat] = { count: 0, image: p.image };
+    categories[cat].count += 1;
+  });
 
   return (
     <main className="container">
       <div className="page-head">
-        <div><h2>WiFi Products</h2><p>Choose a product for your home or office.</p></div>
+        <div><h2>Shop by Category</h2><p>Choose a category to see available products.</p></div>
+      </div>
+      {error && <div className="error">{error}</div>}
+      {!Object.keys(categories).length ? <div className="empty">No products yet.</div> :
+        <div className="category-grid">
+          {Object.entries(categories).map(([cat, info]) => (
+            <button key={cat} className="category-card" onClick={() => navigate(`/products?category=${encodeURIComponent(cat)}`)}>
+              {info.image ? (
+                <div className="category-photo" style={{backgroundImage: `url(${info.image})`}}>
+                  <span className="category-photo-icon">{CATEGORY_ICONS[cat] || "📦"}</span>
+                </div>
+              ) : (
+                <div className="category-icon">{CATEGORY_ICONS[cat] || "📦"}</div>
+              )}
+              <h3>{cat}</h3>
+              <p>{info.count} {info.count === 1 ? "product" : "products"}</p>
+            </button>
+          ))}
+          <button className="category-card" onClick={() => navigate("/products")}>
+            <div className="category-icon">🗂️</div>
+            <h3>All Products</h3>
+            <p>{products.length} total</p>
+          </button>
+        </div>
+      }
+    </main>
+  );
+}
+
+function Products({ addToCart }) {
+  const [products, setProducts] = useState([]);
+  const [search, setSearch] = useState("");
+  const [error, setError] = useState("");
+  const [searchParams] = useSearchParams();
+  const activeCategory = searchParams.get("category") || "";
+
+  useEffect(() => {
+    api("/products").then(setProducts).catch(e => setError(e.message));
+  }, []);
+
+  const filtered = products.filter(p => {
+    const matchesCategory = !activeCategory || p.category === activeCategory;
+    const matchesSearch = `${p.name} ${p.category}`.toLowerCase().includes(search.toLowerCase());
+    return matchesCategory && matchesSearch;
+  });
+
+  return (
+    <main className="container">
+      <div className="page-head">
+        <div>
+          <h2>{activeCategory || "All Products"}</h2>
+          <p>{activeCategory ? `Browsing ${activeCategory}` : "Choose a product for your home or office."} <Link to="/categories">Change category</Link></p>
+        </div>
         <input placeholder="Search products..." value={search} onChange={e => setSearch(e.target.value)} />
       </div>
       {error && <div className="error">{error}</div>}
-      <div className="grid">
-        {filtered.map(p => (
-          <article className="card" key={p._id}>
-            <img src={p.image} alt={p.name} />
-            <div className="card-body">
-              <small>{p.category}</small>
-              <h3>{p.name}</h3>
-              <p>{p.description}</p>
-              <div className="price">₹{p.price.toLocaleString("en-IN")}</div>
-              <p className={p.stock ? "stock" : "out"}>{p.stock ? `${p.stock} in stock` : "Out of stock"}</p>
-              <button className="btn full" disabled={!p.stock} onClick={() => addToCart(p)}>Add to Cart</button>
-            </div>
-          </article>
-        ))}
-      </div>
+      {!filtered.length ? <div className="empty">No products found.</div> :
+        <div className="grid">
+          {filtered.map(p => (
+            <article className="card" key={p._id}>
+              <img src={p.image} alt={p.name} />
+              <div className="card-body">
+                <small>{p.category}</small>
+                <h3>{p.name}</h3>
+                <p>{p.description}</p>
+                <div className="price">₹{p.price.toLocaleString("en-IN")}</div>
+                <p className={p.stock ? "stock" : "out"}>{p.stock ? `${p.stock} in stock` : "Out of stock"}</p>
+                <button className="btn full" disabled={!p.stock} onClick={() => addToCart(p)}>Add to Cart</button>
+              </div>
+            </article>
+          ))}
+        </div>
+      }
     </main>
   );
 }
@@ -613,6 +681,25 @@ function PaymentSettings() {
     } catch (e) { setMessage(e.message); }
   }
 
+  const [cloudName, setCloudName] = useState("");
+  const [uploadPreset, setUploadPreset] = useState("");
+  const [uploadMessage, setUploadMessage] = useState("");
+
+  useEffect(() => {
+    api("/settings/upload").then(d => {
+      setCloudName(d.cloudinaryCloudName || "");
+      setUploadPreset(d.cloudinaryUploadPreset || "");
+    }).catch(() => {});
+  }, []);
+
+  async function saveUploadSettings(e) {
+    e.preventDefault();
+    try {
+      await api("/settings/upload", { method: "PUT", body: JSON.stringify({ cloudinaryCloudName: cloudName, cloudinaryUploadPreset: uploadPreset }) });
+      setUploadMessage("Image upload settings saved.");
+    } catch (e) { setUploadMessage(e.message); }
+  }
+
   return (
     <div className="admin-grid">
       <form className="form-card" onSubmit={save}>
@@ -635,6 +722,23 @@ function PaymentSettings() {
         <p>3. Copy the Key ID and Key Secret here</p>
         <p>4. Toggle "Enable online payments" and save</p>
       </div>
+
+      <form className="form-card" onSubmit={saveUploadSettings}>
+        <h3>Product Image Upload (Cloudinary)</h3>
+        {uploadMessage && <div className="notice">{uploadMessage}</div>}
+        <label>Cloud Name</label>
+        <input placeholder="e.g. dxyz1234" value={cloudName} onChange={e => setCloudName(e.target.value)} />
+        <label>Upload Preset</label>
+        <input placeholder="e.g. mywifi_unsigned" value={uploadPreset} onChange={e => setUploadPreset(e.target.value)} />
+        <button className="btn full">Save Upload Settings</button>
+      </form>
+      <div className="form-card">
+        <h3>How to get these</h3>
+        <p>1. Create a free account at cloudinary.com</p>
+        <p>2. Your Cloud Name is shown on the Dashboard home page</p>
+        <p>3. Go to Settings → Upload → Upload presets → Add upload preset</p>
+        <p>4. Set Signing Mode to "Unsigned", save, and copy its name here</p>
+      </div>
     </div>
   );
 }
@@ -647,12 +751,43 @@ function Admin() {
   const [form, setForm] = useState({ name:"", description:"", category:"WiFi Router", price:"", stock:"", image:"https://placehold.co/600x400?text=WiFi+Product" });
   const [message, setMessage] = useState("");
   const [dateInputs, setDateInputs] = useState({});
+  const [uploadConfig, setUploadConfig] = useState(null);
+  const [uploading, setUploading] = useState(false);
 
   async function load() {
     const [o, p, i] = await Promise.all([api("/orders/all"), api("/products/all"), api("/inquiries/all")]);
     setOrders(o); setProducts(p); setInquiries(i);
   }
   useEffect(() => { load().catch(e => setMessage(e.message)); }, []);
+  useEffect(() => { api("/settings/upload/public").then(setUploadConfig).catch(() => {}); }, []);
+
+  async function uploadImage(file) {
+    if (!uploadConfig?.configured) {
+      setMessage("Image upload isn't set up yet. Go to Payment Settings tab to add your Cloudinary details, or paste an image URL below instead.");
+      return;
+    }
+    setUploading(true);
+    try {
+      const data = new FormData();
+      data.append("file", file);
+      data.append("upload_preset", uploadConfig.cloudinaryUploadPreset);
+
+      const res = await fetch(`https://api.cloudinary.com/v1_1/${uploadConfig.cloudinaryCloudName}/image/upload`, {
+        method: "POST",
+        body: data
+      });
+      const result = await res.json();
+      if (result.secure_url) {
+        setForm(f => ({ ...f, image: result.secure_url }));
+        setMessage("Image uploaded.");
+      } else {
+        setMessage(result.error?.message || "Upload failed.");
+      }
+    } catch (e) {
+      setMessage("Upload failed: " + e.message);
+    }
+    setUploading(false);
+  }
 
   async function status(id, value) {
     try { await api(`/orders/${id}/status`, { method:"PATCH", body:JSON.stringify({status:value}) }); load(); }
@@ -741,8 +876,27 @@ function Admin() {
     <div className="admin-grid">
       <form className="form-card" onSubmit={addProduct}>
         <h3>Add Product</h3>
-        {Object.entries(form).map(([key,value]) => <input key={key} required={["name","price","stock"].includes(key)} placeholder={key} value={value} onChange={e=>setForm({...form,[key]:e.target.value})} />)}
-        <button className="btn full">Add Product</button>
+        {Object.entries(form).filter(([key]) => key !== "image" && key !== "category").map(([key,value]) => <input key={key} required={["name","price","stock"].includes(key)} placeholder={key} value={value} onChange={e=>setForm({...form,[key]:e.target.value})} />)}
+
+        <label className="upload-label">Category</label>
+        <select value={form.category} onChange={e=>setForm({...form,category:e.target.value})}>
+          <option>WiFi Router</option>
+          <option>4G Router</option>
+          <option>5G Router</option>
+          <option>Security Camera</option>
+          <option>Broadband Connection</option>
+          <option>Lease Line</option>
+          <option>Accessories</option>
+          <option>Other</option>
+        </select>
+
+        <label className="upload-label">Product Image</label>
+        {form.image && <img src={form.image} alt="preview" className="image-preview" />}
+        <input type="file" accept="image/*" onChange={e => e.target.files[0] && uploadImage(e.target.files[0])} disabled={uploading} />
+        {uploading && <small>Uploading...</small>}
+        <input placeholder="or paste an image URL" value={form.image} onChange={e=>setForm({...form,image:e.target.value})} />
+
+        <button className="btn full" disabled={uploading}>Add Product</button>
       </form>
       <div>{products.map(p => <div className="mini-product" key={p._id}><img src={p.image} alt="" /><div><b>{p.name}</b><p>₹{p.price} • Stock: {p.stock}</p></div><button className="danger-text" onClick={()=>removeProduct(p._id)}>Remove</button></div>)}</div>
     </div> : tab === "inquiries" ?
@@ -852,6 +1006,7 @@ export default function App() {
     <Navbar user={user} cartCount={count} logout={logout} />
     <Routes>
       <Route path="/" element={<Home />} />
+      <Route path="/categories" element={<Categories />} />
       <Route path="/products" element={<Products addToCart={addToCart} />} />
       <Route path="/login" element={<Login setUser={setUser} />} />
       <Route path="/register" element={<Register setUser={setUser} />} />
