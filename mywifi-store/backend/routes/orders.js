@@ -1,11 +1,47 @@
 const router = require("express").Router();
+const crypto = require("crypto");
+const Razorpay = require("razorpay");
 const Order = require("../models/Order");
 const Product = require("../models/Product");
 const { protect, adminOnly } = require("../middleware/auth");
+const { getOrCreateSettings } = require("../paymentSettings");
+
+// Create a Razorpay order (called before showing the payment popup)
+router.post("/create-payment", protect, async (req, res) => {
+  try {
+    const { amount } = req.body; // amount in rupees
+    if (!amount || amount <= 0) return res.status(400).json({ message: "Invalid amount" });
+
+    const settings = await getOrCreateSettings();
+    if (!settings.onlinePaymentEnabled || !settings.razorpayKeyId || !settings.razorpayKeySecret) {
+      return res.status(400).json({ message: "Online payment is not available right now" });
+    }
+
+    const razorpay = new Razorpay({
+      key_id: settings.razorpayKeyId,
+      key_secret: settings.razorpayKeySecret
+    });
+
+    const razorpayOrder = await razorpay.orders.create({
+      amount: Math.round(amount * 100), // paise
+      currency: "INR",
+      receipt: `rcpt_${Date.now()}`
+    });
+
+    res.json({
+      razorpayOrderId: razorpayOrder.id,
+      amount: razorpayOrder.amount,
+      currency: razorpayOrder.currency,
+      keyId: settings.razorpayKeyId
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
 
 router.post("/", protect, async (req, res) => {
   try {
-    const { items, shippingAddress } = req.body;
+    const { items, shippingAddress, paymentMethod, razorpayOrderId, razorpayPaymentId, razorpaySignature } = req.body;
     if (!items?.length) return res.status(400).json({ message: "Cart is empty" });
 
     const orderItems = [];
@@ -30,6 +66,26 @@ router.post("/", protect, async (req, res) => {
       total += product.price * item.quantity;
     }
 
+    let paymentStatus = "Pending";
+
+    if (paymentMethod === "Online") {
+      if (!razorpayOrderId || !razorpayPaymentId || !razorpaySignature) {
+        return res.status(400).json({ message: "Payment verification details missing" });
+      }
+
+      const settings = await getOrCreateSettings();
+      const expectedSignature = crypto
+        .createHmac("sha256", settings.razorpayKeySecret)
+        .update(`${razorpayOrderId}|${razorpayPaymentId}`)
+        .digest("hex");
+
+      if (expectedSignature !== razorpaySignature) {
+        return res.status(400).json({ message: "Payment verification failed" });
+      }
+
+      paymentStatus = "Paid";
+    }
+
     for (const item of orderItems) {
       await Product.findByIdAndUpdate(item.product, { $inc: { stock: -item.quantity } });
     }
@@ -42,7 +98,10 @@ router.post("/", protect, async (req, res) => {
       items: orderItems,
       shippingAddress,
       totalAmount: total,
-      paymentMethod: "COD",
+      paymentMethod: paymentMethod === "Online" ? "Online" : "COD",
+      paymentStatus,
+      razorpayOrderId: razorpayOrderId || "",
+      razorpayPaymentId: razorpayPaymentId || "",
       status: "Accepted",
       deliveryDate: estimatedDelivery,
       statusHistory: [{ status: "Accepted", date: now }]
@@ -64,7 +123,6 @@ router.get("/all", protect, adminOnly, async (req, res) => {
   res.json(orders);
 });
 
-// Customer can cancel any time before the order is Delivered, Cancelled, or Rejected
 const CUSTOMER_CANCELLABLE_STATUSES = ["Accepted", "Processing", "Shipped", "Out for Delivery"];
 
 router.patch("/:id/cancel", protect, async (req, res) => {
@@ -94,7 +152,6 @@ router.patch("/:id/cancel", protect, async (req, res) => {
   }
 });
 
-// Customer can request a replacement once the order is Delivered
 router.patch("/:id/request-replacement", protect, async (req, res) => {
   try {
     const { reason } = req.body;
@@ -129,7 +186,6 @@ router.patch("/:id/request-replacement", protect, async (req, res) => {
   }
 });
 
-// Admin approves/rejects a replacement request
 router.patch("/:id/replacement-status", protect, adminOnly, async (req, res) => {
   const allowed = ["Approved", "Rejected"];
   const { replacementStatus } = req.body;

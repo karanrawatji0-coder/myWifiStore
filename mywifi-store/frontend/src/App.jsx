@@ -349,6 +349,24 @@ function Checkout({ cart, clearCart }) {
   const [locating, setLocating] = useState(false);
   const [locError, setLocError] = useState("");
   const [error, setError] = useState("");
+  const [paymentOption, setPaymentOption] = useState("COD");
+  const [onlineAvailable, setOnlineAvailable] = useState(false);
+  const [paying, setPaying] = useState(false);
+
+  useEffect(() => {
+    api("/settings/payment/public").then(d => setOnlineAvailable(d.onlinePaymentEnabled)).catch(() => {});
+  }, []);
+
+  function loadRazorpayScript() {
+    return new Promise((resolve) => {
+      if (window.Razorpay) return resolve(true);
+      const script = document.createElement("script");
+      script.src = "https://checkout.razorpay.com/v1/checkout.js";
+      script.onload = () => resolve(true);
+      script.onerror = () => resolve(false);
+      document.body.appendChild(script);
+    });
+  }
 
   function useCurrentLocation() {
     setLocError("");
@@ -380,20 +398,62 @@ function Checkout({ cart, clearCart }) {
     setForm(f => ({ ...f, addressLine: address.addressLine, city: address.city, state: address.state, pincode: address.pincode }));
   }
 
+  const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+
+  async function finalizeOrder(paymentFields) {
+    const order = await api("/orders", {
+      method: "POST",
+      body: JSON.stringify({
+        items: cart.map(i => ({ product: i._id, quantity: i.quantity })),
+        shippingAddress: position ? { ...form, lat: position[0], lng: position[1] } : form,
+        paymentMethod: paymentOption === "Online" ? "Online" : "COD",
+        ...paymentFields
+      })
+    });
+    clearCart();
+    alert(`Order placed successfully. Order ID: ${order._id}`);
+    navigate("/orders");
+  }
+
   async function placeOrder(e) {
     e.preventDefault();
+    setError("");
+
+    if (paymentOption !== "Online") {
+      try { await finalizeOrder({}); }
+      catch (e) { setError(e.message); }
+      return;
+    }
+
+    setPaying(true);
     try {
-      const order = await api("/orders", {
-        method: "POST",
-        body: JSON.stringify({
-          items: cart.map(i => ({ product: i._id, quantity: i.quantity })),
-          shippingAddress: position ? { ...form, lat: position[0], lng: position[1] } : form
-        })
+      const scriptLoaded = await loadRazorpayScript();
+      if (!scriptLoaded) { setError("Could not load payment gateway. Try Cash on Delivery instead."); setPaying(false); return; }
+
+      const paymentOrder = await api("/orders/create-payment", { method: "POST", body: JSON.stringify({ amount: total }) });
+
+      const rzp = new window.Razorpay({
+        key: paymentOrder.keyId,
+        amount: paymentOrder.amount,
+        currency: paymentOrder.currency,
+        name: "MyWiFi Store",
+        description: "Order payment",
+        order_id: paymentOrder.razorpayOrderId,
+        prefill: { name: form.fullName, contact: form.phone },
+        handler: async function (response) {
+          try {
+            await finalizeOrder({
+              razorpayOrderId: response.razorpay_order_id,
+              razorpayPaymentId: response.razorpay_payment_id,
+              razorpaySignature: response.razorpay_signature
+            });
+          } catch (e) { setError(e.message); }
+          setPaying(false);
+        },
+        modal: { ondismiss: () => setPaying(false) }
       });
-      clearCart();
-      alert(`Order placed successfully. Order ID: ${order._id}`);
-      navigate("/orders");
-    } catch (e) { setError(e.message); }
+      rzp.open();
+    } catch (e) { setError(e.message); setPaying(false); }
   }
 
   if (!cart.length) return <main className="container"><div className="empty">Cart is empty.</div></main>;
@@ -416,9 +476,20 @@ function Checkout({ cart, clearCart }) {
           <input key={key} required placeholder={key === "addressLine" ? "House / Street Address" : key[0].toUpperCase()+key.slice(1)}
             value={value} onChange={e => setForm({...form, [key]:e.target.value})} />
         ))}
-        <div className="cod">💵 Payment: Cash on Delivery</div>
+        <div className="payment-options">
+          <label className={`payment-option ${paymentOption === "COD" ? "selected" : ""}`}>
+            <input type="radio" name="payment" checked={paymentOption === "COD"} onChange={() => setPaymentOption("COD")} />
+            💵 Cash on Delivery
+          </label>
+          {onlineAvailable && (
+            <label className={`payment-option ${paymentOption === "Online" ? "selected" : ""}`}>
+              <input type="radio" name="payment" checked={paymentOption === "Online"} onChange={() => setPaymentOption("Online")} />
+              💳 Pay Online (UPI / Card / Netbanking)
+            </label>
+          )}
+        </div>
         {error && <div className="error">{error}</div>}
-        <button className="btn full">Place Order</button>
+        <button className="btn full" disabled={paying}>{paying ? "Processing..." : `Place Order — ₹${total.toLocaleString("en-IN")}`}</button>
       </form>
     </main>
   );
@@ -513,6 +584,61 @@ function Orders() {
   </main>;
 }
 
+function PaymentSettings() {
+  const [settings, setSettings] = useState({ razorpayKeyId: "", razorpayKeySecretSet: false, onlinePaymentEnabled: false });
+  const [keyId, setKeyId] = useState("");
+  const [keySecret, setKeySecret] = useState("");
+  const [enabled, setEnabled] = useState(false);
+  const [message, setMessage] = useState("");
+
+  function load() {
+    api("/settings/payment").then(d => {
+      setSettings(d);
+      setKeyId(d.razorpayKeyId || "");
+      setEnabled(d.onlinePaymentEnabled);
+    }).catch(e => setMessage(e.message));
+  }
+  useEffect(() => { load(); }, []);
+
+  async function save(e) {
+    e.preventDefault();
+    try {
+      await api("/settings/payment", {
+        method: "PUT",
+        body: JSON.stringify({ razorpayKeyId: keyId, razorpayKeySecret: keySecret, onlinePaymentEnabled: enabled })
+      });
+      setKeySecret("");
+      setMessage("Payment settings saved.");
+      load();
+    } catch (e) { setMessage(e.message); }
+  }
+
+  return (
+    <div className="admin-grid">
+      <form className="form-card" onSubmit={save}>
+        <h3>Payment Settings (Razorpay)</h3>
+        {message && <div className="notice">{message}</div>}
+        <label>Razorpay Key ID</label>
+        <input placeholder="rzp_test_xxxxxxxx" value={keyId} onChange={e => setKeyId(e.target.value)} />
+        <label>Razorpay Key Secret {settings.razorpayKeySecretSet && <small>(already set — leave blank to keep it)</small>}</label>
+        <input type="password" placeholder={settings.razorpayKeySecretSet ? "•••••••• (leave blank to keep current)" : "Enter key secret"} value={keySecret} onChange={e => setKeySecret(e.target.value)} />
+        <label className="checkbox-row">
+          <input type="checkbox" checked={enabled} onChange={e => setEnabled(e.target.checked)} />
+          Enable online payments on checkout
+        </label>
+        <button className="btn full">Save Payment Settings</button>
+      </form>
+      <div className="form-card">
+        <h3>How to get these</h3>
+        <p>1. Create a free account at razorpay.com</p>
+        <p>2. Go to Settings → API Keys → Generate Test Key (or Live Key after KYC)</p>
+        <p>3. Copy the Key ID and Key Secret here</p>
+        <p>4. Toggle "Enable online payments" and save</p>
+      </div>
+    </div>
+  );
+}
+
 function Admin() {
   const [orders, setOrders] = useState([]);
   const [products, setProducts] = useState([]);
@@ -577,6 +703,7 @@ function Admin() {
         <button className="tab" onClick={()=>setTab("orders")}>Orders ({orders.length})</button>
         <button className="tab" onClick={()=>setTab("products")}>Products ({products.length})</button>
         <button className="tab" onClick={()=>setTab("inquiries")}>Inquiries ({inquiries.filter(i=>i.status==="New").length} new)</button>
+        <button className="tab" onClick={()=>setTab("payment")}>Payment Settings</button>
       </div>
     </div>
     {message && <div className="notice">{message}</div>}
@@ -618,7 +745,7 @@ function Admin() {
         <button className="btn full">Add Product</button>
       </form>
       <div>{products.map(p => <div className="mini-product" key={p._id}><img src={p.image} alt="" /><div><b>{p.name}</b><p>₹{p.price} • Stock: {p.stock}</p></div><button className="danger-text" onClick={()=>removeProduct(p._id)}>Remove</button></div>)}</div>
-    </div> :
+    </div> : tab === "inquiries" ?
     <div>
       {!inquiries.length ? <div className="empty">No inquiries yet.</div> :
         inquiries.map(i => <div className="order admin-order" key={i._id}>
@@ -631,7 +758,8 @@ function Admin() {
           </div>}
         </div>)
       }
-    </div>}
+    </div> :
+    <PaymentSettings />}
   </main>;
 }
 

@@ -143,3 +143,9 @@
 .replace-form{margin-top:12px;padding:12px;background:#f8fafc;border-radius:10px;border:1px solid #e2e8f0}
 .replace-form textarea{width:100%;box-sizing:border-box;margin-bottom:10px;padding:10px;border-radius:8px;border:1px solid #e2e8f0;font-family:inherit}
 .replacement-flag{color:#b45309;background:#fffbeb;padding:8px 12px;border-radius:8px;font-size:14px}
+
+/* Payment options styles */
+.payment-options{display:flex;flex-direction:column;gap:10px;margin-bottom:14px}
+.payment-option{display:flex;align-items:center;gap:10px;padding:12px 14px;border:1px solid #e2e8f0;border-radius:10px;cursor:pointer;font-size:14px}
+.payment-option.selected{border-color:#2563eb;background:#eff6ff}
+.checkbox-row{display:flex;align-items:center;gap:8px;font-size:14px;margin:8px 0}
