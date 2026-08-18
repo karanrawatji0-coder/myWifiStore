@@ -85,23 +85,27 @@ function Categories() {
         <div className="category-grid">
           {Object.entries(categories).map(([cat, info]) => (
             <div key={cat} className="category-card" onClick={() => navigate(`/products?category=${encodeURIComponent(cat)}`)}>
-              <h3>{cat}</h3>
               <div className="category-photo-wrap">
                 {info.image ? (
                   <img src={info.image} alt={cat} className="category-photo-img" />
                 ) : (
                   <div className="category-photo-fallback">{CATEGORY_ICONS[cat] || "📦"}</div>
                 )}
+                <div className="category-overlay">
+                  <h3>{cat}</h3>
+                  <span className="category-see-more">See more <span className="arrow">→</span></span>
+                </div>
               </div>
-              <span className="category-see-more">See more <span className="arrow">→</span></span>
             </div>
           ))}
           <div className="category-card" onClick={() => navigate("/products")}>
-            <h3>All Products</h3>
             <div className="category-photo-wrap">
               <div className="category-photo-fallback">🗂️</div>
+              <div className="category-overlay">
+                <h3>All Products</h3>
+                <span className="category-see-more">See more <span className="arrow">→</span></span>
+              </div>
             </div>
-            <span className="category-see-more">See more <span className="arrow">→</span></span>
           </div>
         </div>
       }
