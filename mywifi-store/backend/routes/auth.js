@@ -13,6 +13,8 @@ function generateOTP() {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
+const PHONE_PATTERN = /^[6-9]\d{9}$/;
+
 router.post("/register", async (req, res) => {
   try {
     const { name, email, phone, password } = req.body;
@@ -23,6 +25,10 @@ router.post("/register", async (req, res) => {
     const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailPattern.test(email)) {
       return res.status(400).json({ message: "Please enter a valid email address" });
+    }
+
+    if (!PHONE_PATTERN.test(phone)) {
+      return res.status(400).json({ message: "Please enter a valid 10-digit mobile number" });
     }
 
     const exists = await User.findOne({ email: email.toLowerCase() });
@@ -49,7 +55,7 @@ router.post("/register", async (req, res) => {
       });
     }
 
-    const emailSent = await sendOTPEmail(user.email, user.name, otp);
+    const emailSent = await sendOTPEmail(user.email, user.name, otp, "verify");
 
     res.status(201).json({
       message: emailSent
@@ -104,7 +110,7 @@ router.post("/resend-otp", async (req, res) => {
     user.otpExpires = new Date(Date.now() + 10 * 60 * 1000);
     await user.save();
 
-    const emailSent = await sendOTPEmail(user.email, user.name, otp);
+    const emailSent = await sendOTPEmail(user.email, user.name, otp, "verify");
     res.json({ message: emailSent ? "A new code has been sent to your email." : "Could not send email right now, please try again shortly." });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -122,6 +128,66 @@ router.post("/login", async (req, res) => {
     if (!user.isVerified) {
       return res.status(403).json({ message: "Please verify your email before logging in.", needsVerification: true, email: user.email });
     }
+
+    res.json({
+      token: tokenFor(user),
+      user: { id: user._id, name: user.name, email: user.email, phone: user.phone, role: user.role }
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// Forgot password: send a reset code
+router.post("/forgot-password", async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ message: "Email is required" });
+
+    const user = await User.findOne({ email: email.toLowerCase() });
+    // Don't reveal whether the account exists
+    if (!user) {
+      return res.json({ message: "If an account exists for this email, a reset code has been sent." });
+    }
+
+    const otp = generateOTP();
+    user.otp = otp;
+    user.otpExpires = new Date(Date.now() + 10 * 60 * 1000);
+    await user.save();
+
+    await sendOTPEmail(user.email, user.name, otp, "reset");
+
+    res.json({ message: "If an account exists for this email, a reset code has been sent.", email: user.email });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// Reset password using the code
+router.post("/reset-password", async (req, res) => {
+  try {
+    const { email, otp, newPassword } = req.body;
+    if (!email || !otp || !newPassword) {
+      return res.status(400).json({ message: "Email, code and new password are required" });
+    }
+    if (newPassword.length < 6) {
+      return res.status(400).json({ message: "Password must be at least 6 characters" });
+    }
+
+    const user = await User.findOne({ email: email.toLowerCase() });
+    if (!user) return res.status(404).json({ message: "Account not found" });
+
+    if (!user.otp || user.otp !== otp) {
+      return res.status(400).json({ message: "Incorrect code" });
+    }
+    if (!user.otpExpires || user.otpExpires < new Date()) {
+      return res.status(400).json({ message: "Code has expired. Please request a new one." });
+    }
+
+    user.password = await bcrypt.hash(newPassword, 10);
+    user.otp = null;
+    user.otpExpires = null;
+    await user.save();
 
     res.json({
       token: tokenFor(user),

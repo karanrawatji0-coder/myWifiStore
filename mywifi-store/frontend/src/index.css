@@ -179,3 +179,4 @@
 .category-card:hover .arrow{transform:translateX(4px)}
 .category-card h3{margin:4px 0;font-size:17px;color:#0f172a}
 .category-card p{margin:0;font-size:13px;color:#64748b}
+ .auth-link{align-self:flex-start;padding:0;margin-top:-4px;color:#2563eb;font-size:13.5px;font-weight:600} .auth-switch{text-align:center;font-size:14px;color:#64748b;margin:4px 0 0} .auth-switch a{color:#2563eb;font-weight:600;text-decoration:none} .auth-switch a:hover{text-decoration:underline}

@@ -166,6 +166,7 @@ function Login({ setUser }) {
   const [form, setForm] = useState({ email: "", password: "" });
   const [error, setError] = useState("");
   const [needsVerification, setNeedsVerification] = useState(null);
+  const [showForgot, setShowForgot] = useState(false);
 
   async function submit(e) {
     e.preventDefault();
@@ -189,7 +190,16 @@ function Login({ setUser }) {
     return <VerifyOTP email={needsVerification} setUser={setUser} onVerified={() => navigate("/products")} autoSend />;
   }
 
-  return <AuthForm title="Login" submit={submit} form={form} setForm={setForm} error={error} button="Login" />;
+  if (showForgot) {
+    return <ForgotPassword setUser={setUser} onDone={() => navigate("/products")} onBack={() => setShowForgot(false)} />;
+  }
+
+  return (
+    <AuthForm title="Login" submit={submit} form={form} setForm={setForm} error={error} button="Login">
+      <button type="button" className="link-btn auth-link" onClick={() => setShowForgot(true)}>Forgot password?</button>
+      <p className="auth-switch">Don't have an account? <Link to="/register">Register</Link></p>
+    </AuthForm>
+  );
 }
 
 function Register({ setUser }) {
@@ -211,7 +221,65 @@ function Register({ setUser }) {
     return <VerifyOTP email={pendingEmail} setUser={setUser} onVerified={() => navigate("/products")} />;
   }
 
-  return <AuthForm title="Create Account" submit={submit} form={form} setForm={setForm} error={error} button="Register" register />;
+  return (
+    <AuthForm title="Create Account" submit={submit} form={form} setForm={setForm} error={error} button="Register" register>
+      <p className="auth-switch">Already have an account? <Link to="/login">Login</Link></p>
+    </AuthForm>
+  );
+}
+
+function ForgotPassword({ setUser, onDone, onBack }) {
+  const [step, setStep] = useState("email"); // email -> code
+  const [email, setEmail] = useState("");
+  const [otp, setOtp] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [notice, setNotice] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function sendCode(e) {
+    e.preventDefault();
+    setError(""); setBusy(true);
+    try {
+      const data = await api("/auth/forgot-password", { method: "POST", body: JSON.stringify({ email }) });
+      setNotice(data.message);
+      setStep("code");
+    } catch (e) { setError(e.message); }
+    setBusy(false);
+  }
+
+  async function resetPassword(e) {
+    e.preventDefault();
+    setError(""); setBusy(true);
+    try {
+      const data = await api("/auth/reset-password", { method: "POST", body: JSON.stringify({ email, otp, newPassword }) });
+      localStorage.setItem("token", data.token);
+      localStorage.setItem("user", JSON.stringify(data.user));
+      setUser(data.user);
+      onDone();
+    } catch (e) { setError(e.message); }
+    setBusy(false);
+  }
+
+  return (
+    <main className="auth">
+      <form className="form-card" onSubmit={step === "email" ? sendCode : resetPassword}>
+        <h2>Reset Password</h2>
+        {notice && <div className="notice">{notice}</div>}
+        {step === "email" ? (
+          <input required type="email" placeholder="Your account email" value={email} onChange={e => setEmail(e.target.value)} />
+        ) : (
+          <>
+            <input required maxLength={6} placeholder="6-digit code" value={otp} onChange={e => setOtp(e.target.value.replace(/\D/g, ""))} />
+            <input required type="password" placeholder="New password" value={newPassword} onChange={e => setNewPassword(e.target.value)} />
+          </>
+        )}
+        {error && <div className="error">{error}</div>}
+        <button className="btn full" disabled={busy}>{busy ? "Please wait..." : (step === "email" ? "Send Code" : "Reset Password")}</button>
+        <button type="button" className="link-btn" onClick={onBack}>Back to login</button>
+      </form>
+    </main>
+  );
 }
 
 function VerifyOTP({ email, setUser, onVerified, autoSend }) {
@@ -264,17 +332,28 @@ function VerifyOTP({ email, setUser, onVerified, autoSend }) {
   );
 }
 
-function AuthForm({ title, submit, form, setForm, error, button, register }) {
+function AuthForm({ title, submit, form, setForm, error, button, register, children }) {
   return (
     <main className="auth">
       <form className="form-card" onSubmit={submit}>
         <h2>{title}</h2>
         {register && <input required placeholder="Full name" value={form.name} onChange={e => setForm({...form, name:e.target.value})} />}
-        {register && <input required placeholder="Mobile number" value={form.phone} onChange={e => setForm({...form, phone:e.target.value})} />}
+        {register && (
+          <input
+            required
+            type="tel"
+            inputMode="numeric"
+            maxLength={10}
+            placeholder="10-digit mobile number"
+            value={form.phone}
+            onChange={e => setForm({...form, phone: e.target.value.replace(/\D/g, "").slice(0, 10)})}
+          />
+        )}
         <input required type="email" placeholder="Email" value={form.email} onChange={e => setForm({...form, email:e.target.value})} />
         <input required type="password" placeholder="Password" value={form.password} onChange={e => setForm({...form, password:e.target.value})} />
         {error && <div className="error">{error}</div>}
         <button className="btn full">{button}</button>
+        {children}
       </form>
     </main>
   );
@@ -603,8 +682,14 @@ function Orders() {
   async function cancelOrder(id) {
     if (!confirm("Cancel this order?")) return;
     try {
-      await api(`/orders/${id}/cancel`, { method: "PATCH" });
-      setMessage("Order cancelled.");
+      const result = await api(`/orders/${id}/cancel`, { method: "PATCH" });
+      if (result.paymentStatus === "Refunded") {
+        setMessage("Order cancelled. Your payment has been refunded — it should reflect in 5-7 business days.");
+      } else if (result.refundNote) {
+        setMessage("Order cancelled. " + result.refundNote);
+      } else {
+        setMessage("Order cancelled.");
+      }
       load();
     } catch (e) { setMessage(e.message); }
   }
@@ -630,6 +715,7 @@ function Orders() {
           <p>{o.items.map(i => `${i.name} × ${i.quantity}`).join(", ")}</p>
           <div><b>₹{o.totalAmount.toLocaleString("en-IN")}</b><span className="status">{o.status}</span></div>
           {o.deliveryDate && o.status !== "Cancelled" && <p><b>Expected delivery:</b> {new Date(o.deliveryDate).toLocaleDateString("en-IN", { dateStyle: "medium" })}</p>}
+          {o.paymentMethod === "Online" && <p><b>Payment:</b> {o.paymentStatus}{o.paymentStatus === "Refunded" && " (5-7 business days to reflect)"}</p>}
           {o.replacementRequested && <p><b>Replacement:</b> {o.replacementStatus} — {o.replacementReason}</p>}
           <small>{o.shippingAddress.city}, {o.shippingAddress.state} - {o.shippingAddress.pincode}</small>
           <div className="order-actions">
@@ -805,6 +891,15 @@ function Admin() {
     catch(e) { setMessage(e.message); }
   }
 
+  async function refundOrder(id) {
+    if (!confirm("Refund this order's payment via Razorpay?")) return;
+    try {
+      await api(`/orders/${id}/refund`, { method:"PATCH" });
+      setMessage("Refund initiated.");
+      load();
+    } catch(e) { setMessage(e.message); }
+  }
+
   async function saveDeliveryDate(id) {
     const value = dateInputs[id];
     if (!value) return;
@@ -855,6 +950,7 @@ function Admin() {
         <p>{o.items.map(i => `${i.name} × ${i.quantity}`).join(", ")} — ₹{o.totalAmount.toLocaleString("en-IN")}</p>
         <p><b>Ship to:</b> {o.shippingAddress.fullName}, {o.shippingAddress.addressLine}, {o.shippingAddress.city}, {o.shippingAddress.state} - {o.shippingAddress.pincode}</p>
         {o.deliveryDate && <p><b>Expected delivery:</b> {new Date(o.deliveryDate).toLocaleDateString("en-IN")}</p>}
+        {o.paymentMethod === "Online" && <p><b>Payment:</b> {o.paymentStatus}{o.refundId && ` (refund ID: ${o.refundId})`}</p>}
         {o.replacementRequested && (
           <p className="replacement-flag"><b>⚠ Replacement requested ({o.replacementStatus}):</b> {o.replacementReason}</p>
         )}
@@ -870,6 +966,9 @@ function Admin() {
             onChange={e => setDateInputs({...dateInputs, [o._id]: e.target.value})}
           />
           <button className="small-btn" onClick={()=>saveDeliveryDate(o._id)}>Set Delivery Date</button>
+          {o.paymentMethod === "Online" && o.paymentStatus === "Paid" && (
+            <button className="small-btn danger-text" onClick={()=>refundOrder(o._id)}>Refund Payment</button>
+          )}
         </div>
         {o.replacementRequested && o.replacementStatus === "Requested" && (
           <div className="status-buttons" style={{marginTop:"8px"}}>
