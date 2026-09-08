@@ -55,13 +55,14 @@ router.post("/register", async (req, res) => {
       });
     }
 
-    const emailSent = await sendOTPEmail(user.email, user.name, otp, "verify");
-
     res.status(201).json({
-      message: emailSent
-        ? "We've sent a 6-digit verification code to your email."
-        : "Account created, but the verification email could not be sent. Please try resending the code.",
+      message: "We're sending a 6-digit verification code to your email — it should arrive shortly.",
       email: user.email
+    });
+
+    // Send the email after responding, so the request doesn't wait on it
+    sendOTPEmail(user.email, user.name, otp, "verify").catch(err => {
+      console.error("Failed to send verification email:", err.message);
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -110,8 +111,11 @@ router.post("/resend-otp", async (req, res) => {
     user.otpExpires = new Date(Date.now() + 10 * 60 * 1000);
     await user.save();
 
-    const emailSent = await sendOTPEmail(user.email, user.name, otp, "verify");
-    res.json({ message: emailSent ? "A new code has been sent to your email." : "Could not send email right now, please try again shortly." });
+    res.json({ message: "A new code is on its way to your email." });
+
+    sendOTPEmail(user.email, user.name, otp, "verify").catch(err => {
+      console.error("Failed to resend verification email:", err.message);
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -155,9 +159,11 @@ router.post("/forgot-password", async (req, res) => {
     user.otpExpires = new Date(Date.now() + 10 * 60 * 1000);
     await user.save();
 
-    await sendOTPEmail(user.email, user.name, otp, "reset");
-
     res.json({ message: "If an account exists for this email, a reset code has been sent.", email: user.email });
+
+    sendOTPEmail(user.email, user.name, otp, "reset").catch(err => {
+      console.error("Failed to send reset email:", err.message);
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
